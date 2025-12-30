@@ -61,6 +61,7 @@ _(Refer to the server's `ListTools` response or the source code (`src/index.ts`)
       - Generate a **GitLab Personal Access Token**: Go to your GitLab profile -> Settings -> Access Tokens. Create a token with `api` and `read_api` scopes.
       - Paste the generated token into `.env` for the `GITLAB_PERSONAL_ACCESS_TOKEN` variable.
       - **(Optional)** If you use a self-hosted GitLab instance, update `GITLAB_API_URL` to point to your instance's API endpoint (e.g., `https://gitlab.yourcompany.com/api/v4`). Otherwise, leave it as the default for gitlab.com.
+      - **(Optional)** Set `DOC_WIKI_HOME_URL` to your wiki home page URL. If `DOC_WIKI_PROJECT_PATH` is not set, it is derived from this URL.
 
 4.  **Build the server:**
     ```bash

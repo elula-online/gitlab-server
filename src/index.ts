@@ -16,8 +16,20 @@ dotenv.config();
 // Read configuration from environment variables
 const GITLAB_TOKEN = process.env.GITLAB_PERSONAL_ACCESS_TOKEN;
 const GITLAB_API_URL = process.env.GITLAB_API_URL || 'https://gitlab.com/api/v4'; // Default to public GitLab
-const DOC_WIKI_PROJECT_PATH = process.env.DOC_WIKI_PROJECT_PATH || 'noqta/noqta';
 const DOC_WIKI_HOME_URL = process.env.DOC_WIKI_HOME_URL || 'https://gitlab.noqta.tn/noqta/noqta/-/wikis/home';
+const DOC_WIKI_PROJECT_PATH = process.env.DOC_WIKI_PROJECT_PATH || (() => {
+  try {
+    const wikiUrl = new URL(DOC_WIKI_HOME_URL);
+    const segments = wikiUrl.pathname.split('/').filter(Boolean);
+    const dashIndex = segments.indexOf('-');
+    if (dashIndex > 0) {
+      return segments.slice(0, dashIndex).join('/');
+    }
+  } catch {
+    // Fall through to default.
+  }
+  return 'noqta/noqta';
+})();
 
 if (!GITLAB_TOKEN) {
   console.error('Error: GITLAB_PERSONAL_ACCESS_TOKEN environment variable is required.');
