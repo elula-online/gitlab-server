@@ -162,6 +162,14 @@ const isValidListDocumentationWikiPagesArgs = (args: any): args is { project_id?
     (args.per_page === undefined || typeof args.per_page === 'number') &&
     (args.with_content === undefined || typeof args.with_content === 'boolean');
 
+const isValidListWikiPagesArgs = (args: any): args is { project_id?: number | string; project_path?: string; page?: number; per_page?: number; with_content?: boolean } =>
+    typeof args === 'object' && args !== null &&
+    (args.project_id === undefined || typeof args.project_id === 'number' || typeof args.project_id === 'string') &&
+    (args.project_path === undefined || typeof args.project_path === 'string') &&
+    (args.page === undefined || typeof args.page === 'number') &&
+    (args.per_page === undefined || typeof args.per_page === 'number') &&
+    (args.with_content === undefined || typeof args.with_content === 'boolean');
+
 const isValidGetDocumentationWikiPageArgs = (args: any): args is { slug: string; project_id?: number | string; project_path?: string } =>
     typeof args === 'object' && args !== null && typeof args.slug === 'string' &&
     (args.project_id === undefined || typeof args.project_id === 'number' || typeof args.project_id === 'string') &&
@@ -403,6 +411,21 @@ class CustomGitLabServer {
             },
         },
         {
+            name: 'list_wiki_pages',
+            description: `List wiki pages for a GitLab project. Defaults to ${DOC_WIKI_PROJECT_PATH}.`,
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    project_id: { type: ['number', 'string'], description: 'Optional: Project ID or URL-encoded path. Overrides project_path if set.' },
+                    project_path: { type: 'string', description: 'Optional: Project path with namespace (e.g., group/project). Used when project_id is not provided.' },
+                    page: { type: 'number', description: 'Page number' },
+                    per_page: { type: 'number', description: 'Results per page' },
+                    with_content: { type: 'boolean', description: 'Include page content in the list results' },
+                },
+                required: [],
+            },
+        },
+        {
             name: 'get_documentation_wiki_page',
             description: `Get a documentation wiki page. Defaults to ${DOC_WIKI_PROJECT_PATH}. Use this before creating or updating issues.`,
             inputSchema: {
@@ -533,6 +556,8 @@ class CustomGitLabServer {
             return this.handleCreateIssue(request.params.arguments);
         case 'list_documentation_wiki_pages':
             return this.handleListDocumentationWikiPages(request.params.arguments);
+        case 'list_wiki_pages':
+            return this.handleListWikiPages(request.params.arguments);
         case 'get_documentation_wiki_page':
             return this.handleGetDocumentationWikiPage(request.params.arguments);
         case 'create_merge_request':
@@ -701,6 +726,32 @@ class CustomGitLabServer {
           };
       } catch (error) {
           return this.handleGitLabApiError(error, 'list_documentation_wiki_pages');
+      }
+  }
+
+  // --- Tool Implementation: list_wiki_pages ---
+  private async handleListWikiPages(args: any) {
+      if (!isValidListWikiPagesArgs(args)) {
+          throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments for list_wiki_pages');
+      }
+      const { project_id, project_path, page, per_page, with_content } = args;
+      const projectSelector = project_id ?? project_path ?? DOC_WIKI_PROJECT_PATH;
+      if (typeof projectSelector === 'string' && !projectSelector.trim()) {
+          throw new McpError(ErrorCode.InvalidParams, 'project_path must not be empty when provided.');
+      }
+      const projectPathEncoded = encodeURIComponent(projectSelector.toString());
+
+      try {
+          console.error(`Listing wiki pages for ${projectSelector}`);
+          const response = await this.axiosInstance.get(`/projects/${projectPathEncoded}/wikis`, {
+              params: { page, per_page, with_content },
+          });
+          console.error(`GitLab API response status: ${response.status}`);
+          return {
+              content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }],
+          };
+      } catch (error) {
+          return this.handleGitLabApiError(error, 'list_wiki_pages');
       }
   }
 

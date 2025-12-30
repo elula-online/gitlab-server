@@ -18,6 +18,9 @@ This server exposes the following tools for use by MCP clients:
 - **`bulk_update_issues`**: Update attributes of multiple issues in a project at once.
 - **`create_branch`**: Create a new branch in a project from a specified ref.
 - **`create_issue`**: Create a new issue in a project.
+- **`list_documentation_wiki_pages`**: List documentation wiki pages for the configured documentation project.
+- **`get_documentation_wiki_page`**: Get a documentation wiki page by slug for the configured documentation project.
+- **`list_wiki_pages`**: List wiki pages for a specific GitLab project (defaults to `DOC_WIKI_PROJECT_PATH`).
 - **`create_merge_request`**: Create a new merge request.
 - **`list_issue_notes`**: List comments (notes) for a specific issue.
 - **`create_merge_request_note`**: Add a comment (note) to a specific merge request.
