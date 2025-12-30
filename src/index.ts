@@ -16,6 +16,8 @@ dotenv.config();
 // Read configuration from environment variables
 const GITLAB_TOKEN = process.env.GITLAB_PERSONAL_ACCESS_TOKEN;
 const GITLAB_API_URL = process.env.GITLAB_API_URL || 'https://gitlab.com/api/v4'; // Default to public GitLab
+const DOC_WIKI_PROJECT_PATH = process.env.DOC_WIKI_PROJECT_PATH || 'noqta/noqta';
+const DOC_WIKI_HOME_URL = process.env.DOC_WIKI_HOME_URL || 'https://gitlab.noqta.tn/noqta/noqta/-/wikis/home';
 
 if (!GITLAB_TOKEN) {
   console.error('Error: GITLAB_PERSONAL_ACCESS_TOKEN environment variable is required.');
@@ -125,8 +127,9 @@ const isValidGetIssueArgs = (args: any): args is { project_id: number | string; 
 const isValidCreateNoteArgs = (args: any): args is { project_id: number | string; issue_iid: number; body: string } =>
     typeof args === 'object' && args !== null && (typeof args.project_id === 'number' || typeof args.project_id === 'string') && typeof args.issue_iid === 'number' && typeof args.body === 'string';
 
-const isValidUpdateIssueArgs = (args: any): args is { project_id: number | string; issue_iid: number; title?: string; description?: string; labels?: string; add_labels?: string; remove_labels?: string; state_event?: 'close' | 'reopen' } =>
+const isValidUpdateIssueArgs = (args: any): args is { project_id: number | string; issue_iid: number; wiki_ref: string; title?: string; description?: string; labels?: string; add_labels?: string; remove_labels?: string; state_event?: 'close' | 'reopen' } =>
     typeof args === 'object' && args !== null && (typeof args.project_id === 'number' || typeof args.project_id === 'string') && typeof args.issue_iid === 'number' &&
+    typeof args.wiki_ref === 'string' &&
     (args.title === undefined || typeof args.title === 'string') &&
     (args.description === undefined || typeof args.description === 'string') &&
     (args.labels === undefined || typeof args.labels === 'string') &&
@@ -137,8 +140,9 @@ const isValidUpdateIssueArgs = (args: any): args is { project_id: number | strin
 const isValidCreateBranchArgs = (args: any): args is { project_id: number | string; branch_name: string; ref: string } =>
     typeof args === 'object' && args !== null && (typeof args.project_id === 'number' || typeof args.project_id === 'string') && typeof args.branch_name === 'string' && typeof args.ref === 'string';
 
-const isValidCreateIssueArgs = (args: any): args is { project_id: number | string; title: string; description?: string; labels?: string; assignee_ids?: number[] } =>
+const isValidCreateIssueArgs = (args: any): args is { project_id: number | string; title: string; wiki_ref: string; description?: string; labels?: string; assignee_ids?: number[] } =>
     typeof args === 'object' && args !== null && (typeof args.project_id === 'number' || typeof args.project_id === 'string') && typeof args.title === 'string' &&
+    typeof args.wiki_ref === 'string' &&
     (args.description === undefined || typeof args.description === 'string') &&
     (args.labels === undefined || typeof args.labels === 'string') &&
     (args.assignee_ids === undefined || (Array.isArray(args.assignee_ids) && args.assignee_ids.every((id: any) => typeof id === 'number')));
@@ -149,6 +153,19 @@ const isValidListIssueNotesArgs = (args: any): args is { project_id: number | st
     typeof args.issue_iid === 'number' &&
     (args.page === undefined || typeof args.page === 'number') &&
     (args.per_page === undefined || typeof args.per_page === 'number');
+
+const isValidListDocumentationWikiPagesArgs = (args: any): args is { project_id?: number | string; project_path?: string; page?: number; per_page?: number; with_content?: boolean } =>
+    typeof args === 'object' && args !== null &&
+    (args.project_id === undefined || typeof args.project_id === 'number' || typeof args.project_id === 'string') &&
+    (args.project_path === undefined || typeof args.project_path === 'string') &&
+    (args.page === undefined || typeof args.page === 'number') &&
+    (args.per_page === undefined || typeof args.per_page === 'number') &&
+    (args.with_content === undefined || typeof args.with_content === 'boolean');
+
+const isValidGetDocumentationWikiPageArgs = (args: any): args is { slug: string; project_id?: number | string; project_path?: string } =>
+    typeof args === 'object' && args !== null && typeof args.slug === 'string' &&
+    (args.project_id === undefined || typeof args.project_id === 'number' || typeof args.project_id === 'string') &&
+    (args.project_path === undefined || typeof args.project_path === 'string');
 
 // Add this with the other type guards near the top
 const isValidCreateMrArgs = (args: any): args is { project_id: number | string; source_branch: string; target_branch: string; title: string; description?: string; assignee_id?: number; reviewer_ids?: number[] } =>
@@ -324,12 +341,13 @@ class CustomGitLabServer {
         },
         {
             name: 'update_issue',
-            description: 'Update attributes of an issue (e.g., title, description, labels, state).',
+            description: `Update attributes of an issue (e.g., title, description, labels, state). You must consult the documentation wiki first and provide wiki_ref from ${DOC_WIKI_HOME_URL}.`,
             inputSchema: {
                 type: 'object',
                 properties: {
                     project_id: { type: ['number', 'string'], description: 'The ID or URL-encoded path of the project' },
                     issue_iid: { type: 'number', description: 'The internal ID (IID) of the issue' },
+                    wiki_ref: { type: 'string', description: `Required. Documentation wiki page or section used for this update (URL or slug from ${DOC_WIKI_HOME_URL}).` },
                     title: { type: 'string', description: 'New title for the issue' },
                     description: { type: 'string', description: 'New issue description (can include Markdown checklists)' },
                     labels: { type: 'string', description: 'Comma-separated list of label names to set (replaces existing)' },
@@ -337,7 +355,7 @@ class CustomGitLabServer {
                     remove_labels: { type: 'string', description: 'Comma-separated list of label names to remove' },
                     state_event: { type: 'string', enum: ['close', 'reopen'], description: 'Event to change issue state' },
                 },
-                required: ['project_id', 'issue_iid'], // Need at least one attribute to update
+                required: ['project_id', 'issue_iid', 'wiki_ref'], // Need at least one attribute to update
             },
         },
         {
@@ -355,17 +373,46 @@ class CustomGitLabServer {
         },
         {
             name: 'create_issue',
-            description: 'Create a new issue in a project.',
+            description: `Create a new issue in a project. You must consult the documentation wiki first and provide wiki_ref from ${DOC_WIKI_HOME_URL}.`,
             inputSchema: {
                 type: 'object',
                 properties: {
                     project_id: { type: ['number', 'string'], description: 'The ID or URL-encoded path of the project' },
                     title: { type: 'string', description: 'The title of the issue' },
+                    wiki_ref: { type: 'string', description: `Required. Documentation wiki page or section used for this issue (URL or slug from ${DOC_WIKI_HOME_URL}).` },
                     description: { type: 'string', description: 'The description of the issue' },
                     labels: { type: 'string', description: 'Comma-separated list of label names' },
                     assignee_ids: { type: 'array', items: { type: 'number' }, description: 'Array of user IDs to assign' },
                 },
-                required: ['project_id', 'title'],
+                required: ['project_id', 'title', 'wiki_ref'],
+            },
+        },
+        {
+            name: 'list_documentation_wiki_pages',
+            description: `List documentation wiki pages. Defaults to ${DOC_WIKI_PROJECT_PATH}. Use this before creating or updating issues.`,
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    project_id: { type: ['number', 'string'], description: 'Optional: Project ID or URL-encoded path. Overrides project_path if set.' },
+                    project_path: { type: 'string', description: 'Optional: Project path with namespace (e.g., group/project). Used when project_id is not provided.' },
+                    page: { type: 'number', description: 'Page number' },
+                    per_page: { type: 'number', description: 'Results per page' },
+                    with_content: { type: 'boolean', description: 'Include page content in the list results' },
+                },
+                required: [],
+            },
+        },
+        {
+            name: 'get_documentation_wiki_page',
+            description: `Get a documentation wiki page. Defaults to ${DOC_WIKI_PROJECT_PATH}. Use this before creating or updating issues.`,
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    slug: { type: 'string', description: 'Wiki page slug (e.g., "home")' },
+                    project_id: { type: ['number', 'string'], description: 'Optional: Project ID or URL-encoded path. Overrides project_path if set.' },
+                    project_path: { type: 'string', description: 'Optional: Project path with namespace (e.g., group/project). Used when project_id is not provided.' },
+                },
+                required: ['slug'],
             },
         },
         {
@@ -484,6 +531,10 @@ class CustomGitLabServer {
             return this.handleCreateBranch(request.params.arguments);
         case 'create_issue':
             return this.handleCreateIssue(request.params.arguments);
+        case 'list_documentation_wiki_pages':
+            return this.handleListDocumentationWikiPages(request.params.arguments);
+        case 'get_documentation_wiki_page':
+            return this.handleGetDocumentationWikiPage(request.params.arguments);
         case 'create_merge_request':
             return this.handleCreateMergeRequest(request.params.arguments);
         case 'list_issue_notes':
@@ -627,6 +678,56 @@ class CustomGitLabServer {
       }
   }
 
+  // --- Tool Implementation: list_documentation_wiki_pages ---
+  private async handleListDocumentationWikiPages(args: any) {
+      if (!isValidListDocumentationWikiPagesArgs(args)) {
+          throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments for list_documentation_wiki_pages');
+      }
+      const { project_id, project_path, page, per_page, with_content } = args;
+      const projectSelector = project_id ?? project_path ?? DOC_WIKI_PROJECT_PATH;
+      if (typeof projectSelector === 'string' && !projectSelector.trim()) {
+          throw new McpError(ErrorCode.InvalidParams, 'project_path must not be empty when provided.');
+      }
+      const projectPathEncoded = encodeURIComponent(projectSelector.toString());
+
+      try {
+          console.error(`Listing documentation wiki pages for ${projectSelector}`);
+          const response = await this.axiosInstance.get(`/projects/${projectPathEncoded}/wikis`, {
+              params: { page, per_page, with_content },
+          });
+          console.error(`GitLab API response status: ${response.status}`);
+          return {
+              content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }],
+          };
+      } catch (error) {
+          return this.handleGitLabApiError(error, 'list_documentation_wiki_pages');
+      }
+  }
+
+  // --- Tool Implementation: get_documentation_wiki_page ---
+  private async handleGetDocumentationWikiPage(args: any) {
+      if (!isValidGetDocumentationWikiPageArgs(args)) {
+          throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments for get_documentation_wiki_page');
+      }
+      const { slug, project_id, project_path } = args;
+      const projectSelector = project_id ?? project_path ?? DOC_WIKI_PROJECT_PATH;
+      if (typeof projectSelector === 'string' && !projectSelector.trim()) {
+          throw new McpError(ErrorCode.InvalidParams, 'project_path must not be empty when provided.');
+      }
+      const projectPathEncoded = encodeURIComponent(projectSelector.toString());
+
+      try {
+          console.error(`Getting documentation wiki page "${slug}" for ${projectSelector}`);
+          const response = await this.axiosInstance.get(`/projects/${projectPathEncoded}/wikis/${encodeURIComponent(slug)}`);
+          console.error(`GitLab API response status: ${response.status}`);
+          return {
+              content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }],
+          };
+      } catch (error) {
+          return this.handleGitLabApiError(error, 'get_documentation_wiki_page');
+      }
+  }
+
   // --- Tool Implementation: create_repository ---
   private async handleCreateRepository(args: any) {
       if (!isValidCreateRepositoryArgs(args)) {
@@ -761,11 +862,14 @@ class CustomGitLabServer {
       if (!isValidUpdateIssueArgs(args)) {
           throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments for update_issue');
       }
-      const { project_id, issue_iid, ...updateData } = args; // Separate IDs from data
+      const { project_id, issue_iid, wiki_ref, ...updateData } = args; // Separate IDs from data
       const projectIdEncoded = encodeURIComponent(project_id.toString());
 
       try {
-          console.error(`Updating issue ${issue_iid} in project ${project_id}`);
+          if (!wiki_ref.trim()) {
+              throw new McpError(ErrorCode.InvalidParams, 'wiki_ref is required and must not be empty.');
+          }
+          console.error(`Updating issue ${issue_iid} in project ${project_id} (wiki_ref: ${wiki_ref})`);
           const response = await this.axiosInstance.put<GitLabIssue>(`/projects/${projectIdEncoded}/issues/${issue_iid}`, updateData);
           console.error(`GitLab API response status: ${response.status}`);
           return {
@@ -806,11 +910,14 @@ class CustomGitLabServer {
     if (!isValidCreateIssueArgs(args)) {
         throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments for create_issue');
     }
-    const { project_id, ...issueData } = args; // Separate project_id from issue data
+    const { project_id, wiki_ref, ...issueData } = args; // Separate project_id from issue data
     const projectIdEncoded = encodeURIComponent(project_id.toString());
 
     try {
-        console.error(`Creating issue in project ${project_id} with title "${issueData.title}"`);
+        if (!wiki_ref.trim()) {
+            throw new McpError(ErrorCode.InvalidParams, 'wiki_ref is required and must not be empty.');
+        }
+        console.error(`Creating issue in project ${project_id} with title "${issueData.title}" (wiki_ref: ${wiki_ref})`);
         const response = await this.axiosInstance.post<GitLabIssue>(`/projects/${projectIdEncoded}/issues`, issueData);
         console.error(`GitLab API response status: ${response.status}`);
         return {
