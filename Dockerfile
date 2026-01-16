@@ -1,25 +1,24 @@
 FROM node:20-slim
 
-# Install build tools for native dependencies
+# Install system build tools for any native modules
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files first
 COPY package*.json ./
 
-# Fix the "refusing to install" error by ignoring peer conflicts
-RUN npm install --legacy-peer-deps
+# 1. Install dependencies WITHOUT running automatic build scripts
+RUN npm install --legacy-peer-deps --ignore-scripts
 
-# Copy the rest of your code
+# Copy the rest of the application code (including tsconfig.json and src/)
 COPY . .
 
-# Explicitly build using the local tsc and point to the config file
-# We skip the chmodSync part as Docker handles permissions differently
+# 2. Run the build manually using the local tsc binary
 RUN ./node_modules/.bin/tsc -p tsconfig.json
 
-# Ensure the build directory exists and has correct permissions
+# 3. Ensure the output file is executable for the MCP protocol
 RUN chmod +x build/index.js
 
-# Start the server
+# Start the server using node
 CMD ["node", "build/index.js"]
