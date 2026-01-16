@@ -1,24 +1,22 @@
 FROM node:20-slim
 
-# Install system build tools for any native modules
+# Install system build tools
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy package files first
+# Copy package files and install
 COPY package*.json ./
-
-# 1. Install dependencies WITHOUT running automatic build scripts
 RUN npm install --legacy-peer-deps --ignore-scripts
 
-# Copy the rest of the application code (including tsconfig.json and src/)
+# Copy code and build
 COPY . .
-
-# 2. Run the build manually using the local tsc binary
 RUN ./node_modules/.bin/tsc -p tsconfig.json
 
-# 3. Ensure the output file is executable for the MCP protocol
-RUN chmod +x build/index.js
+# Expose the default port for SSE
+EXPOSE 3000
 
-# Start the server using node
-CMD ["node", "build/index.js"]
+# Start the server in SSE mode
+# Note: If the server doesn't have a specific SSE command, 
+# we use the MCP inspector as a gateway or check the specific repo docs.
+CMD ["node", "build/index.js", "--transport", "sse", "--port", "3000"]
