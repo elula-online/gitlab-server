@@ -1,16 +1,16 @@
-# Use Node.js LTS version
 FROM node:20-slim
 
-# Set working directory
+# Install essential build tools (sometimes required for native modules)
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copy package files first for better caching
+# Copy package files
 COPY package*.json ./
 
-# Install all dependencies (including devDependencies for build)
-RUN npm install
+# Use clean-install with legacy-peer-deps to bypass version conflicts
+RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 
-# Copy the rest of the application code
 COPY . .
 
 # Build the TypeScript code
