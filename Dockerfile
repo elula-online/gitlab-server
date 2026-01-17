@@ -1,22 +1,27 @@
-FROM node:20-slim
+# Use Node.js LTS version
+FROM node:20-alpine
 
-# Install system build tools
-RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
-
+# Set working directory
 WORKDIR /app
 
-# Copy package files and install
+# Copy package files
 COPY package*.json ./
-RUN npm install --legacy-peer-deps --ignore-scripts
 
-# Copy code and build
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy source code
 COPY . .
-RUN ./node_modules/.bin/tsc -p tsconfig.json
 
-# Expose the default port for SSE
+# Build the TypeScript code
+RUN npm run build
+
+# Expose port for HTTP mode
 EXPOSE 3000
 
-# Start the server in SSE mode
-# Note: If the server doesn't have a specific SSE command, 
-# we use the MCP inspector as a gateway or check the specific repo docs.
-CMD ["node", "build/index.js", "--transport", "sse", "--port", "3000"]
+# Set environment variables for HTTP mode
+ENV USE_HTTP=true
+ENV HTTP_PORT=3000
+
+# Run the server
+CMD ["node", "build/index.js"]

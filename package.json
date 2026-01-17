@@ -31,15 +31,20 @@
     "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
     "prepare": "npm run build",
     "watch": "tsc --watch",
-    "inspector": "npx @modelcontextprotocol/inspector build/index.js"
+    "inspector": "npx @modelcontextprotocol/inspector build/index.js",
+    "start:http": "USE_HTTP=true HTTP_PORT=3000 node build/index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "0.6.0",
     "axios": "^1.8.4",
-    "dotenv": "^16.5.0"
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.22.1"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/dotenv": "^8.2.3",
+    "@types/express": "^4.17.25",
     "@types/node": "^20.11.24",
     "typescript": "^5.3.3"
   }

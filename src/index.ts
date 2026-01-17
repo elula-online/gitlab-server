@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
   CallToolRequestSchema,
   ErrorCode,
@@ -9,13 +10,15 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import express from 'express';
+import cors from 'cors';
 
 // Load environment variables from .env file
 dotenv.config();
 
 // Read configuration from environment variables
 const GITLAB_TOKEN = process.env.GITLAB_PERSONAL_ACCESS_TOKEN;
-const GITLAB_API_URL = process.env.GITLAB_API_URL || 'https://gitlab.com/api/v4'; // Default to public GitLab
+const GITLAB_API_URL = process.env.GITLAB_API_URL || 'https://gitlab.elula.cloud/api/v4';
 const DOC_WIKI_HOME_URL = process.env.DOC_WIKI_HOME_URL || 'https://gitlab.noqta.tn/noqta/noqta/-/wikis/home';
 const DOC_WIKI_PROJECT_PATH = process.env.DOC_WIKI_PROJECT_PATH || (() => {
   try {
@@ -31,11 +34,14 @@ const DOC_WIKI_PROJECT_PATH = process.env.DOC_WIKI_PROJECT_PATH || (() => {
   return 'noqta/noqta';
 })();
 
+// NEW: HTTP/SSE mode configuration
+const USE_HTTP = process.env.USE_HTTP === 'true';
+const HTTP_PORT = parseInt(process.env.HTTP_PORT || '3000', 10);
+
 if (!GITLAB_TOKEN) {
   console.error('Error: GITLAB_PERSONAL_ACCESS_TOKEN environment variable is required.');
   process.exit(1); // Exit if token is missing
 }
-
 // --- Interfaces for GitLab API responses (add more as needed) ---
 interface GitLabProject {
   id: number;
@@ -1125,11 +1131,56 @@ class CustomGitLabServer {
   }
 
 
+
   // --- Start the Server ---
   async run() {
+    if (USE_HTTP) {
+      await this.runHttpServer();
+    } else {
+      await this.runStdioServer();
+    }
+  }
+
+  private async runStdioServer() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error(`Custom GitLab MCP server (noqta-gitlab-server) running on stdio, connected to ${GITLAB_API_URL}`);
+  }
+
+  private async runHttpServer() {
+    const app = express();
+    
+    app.use(cors());
+    app.use(express.json());
+
+    app.get('/health', (_req, res) => {
+      res.json({ 
+        status: 'ok', 
+        server: 'gitlab-mcp-server',
+        version: '1.0.2',
+        gitlab_api: GITLAB_API_URL 
+      });
+    });
+
+    app.get('/sse', async (req, res) => {
+      console.error('New SSE connection established');
+      const transport = new SSEServerTransport('/message', res);
+      await this.server.connect(transport);
+      
+      req.on('close', () => {
+        console.error('SSE connection closed');
+      });
+    });
+
+    app.post('/message', async (_req, res) => {
+      res.status(200).end();
+    });
+
+    app.listen(HTTP_PORT, '0.0.0.0', () => {
+      console.error(`Custom GitLab MCP server running on HTTP port ${HTTP_PORT}`);
+      console.error(`SSE endpoint: http://localhost:${HTTP_PORT}/sse`);
+      console.error(`Connected to GitLab API: ${GITLAB_API_URL}`);
+    });
   }
 }
 
